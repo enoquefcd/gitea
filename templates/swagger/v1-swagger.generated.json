@@ -945,6 +945,9 @@
           "403": {
             "$ref": "#/responses/forbidden"
           },
+          "409": {
+            "$ref": "#/responses/error"
+          },
           "422": {
             "$ref": "#/responses/validationError"
           }
@@ -1028,6 +1031,9 @@
           },
           "403": {
             "$ref": "#/responses/forbidden"
+          },
+          "409": {
+            "$ref": "#/responses/error"
           },
           "422": {
             "$ref": "#/responses/validationError"
@@ -14991,6 +14997,9 @@
           },
           "404": {
             "$ref": "#/responses/notFound"
+          },
+          "409": {
+            "$ref": "#/responses/error"
           }
         }
       }
@@ -20099,6 +20108,9 @@
           },
           "422": {
             "$ref": "#/responses/invalidTopicsError"
+          },
+          "423": {
+            "$ref": "#/responses/repoArchivedError"
           }
         }
       }
@@ -20145,6 +20157,9 @@
           },
           "422": {
             "$ref": "#/responses/invalidTopicsError"
+          },
+          "423": {
+            "$ref": "#/responses/repoArchivedError"
           }
         }
       },
@@ -20189,6 +20204,9 @@
           },
           "422": {
             "$ref": "#/responses/invalidTopicsError"
+          },
+          "423": {
+            "$ref": "#/responses/repoArchivedError"
           }
         }
       }
@@ -22263,6 +22281,12 @@
         "responses": {
           "201": {
             "$ref": "#/responses/EmailList"
+          },
+          "400": {
+            "$ref": "#/responses/error"
+          },
+          "409": {
+            "$ref": "#/responses/error"
           },
           "422": {
             "$ref": "#/responses/validationError"
@@ -25948,6 +25972,24 @@
           "format": "date-time",
           "x-go-name": "Created"
         },
+        "deletion_allowlist_deploy_keys": {
+          "type": "boolean",
+          "x-go-name": "DeletionAllowlistDeployKeys"
+        },
+        "deletion_allowlist_teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistTeams"
+        },
+        "deletion_allowlist_usernames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistUsernames"
+        },
         "dismiss_stale_approvals": {
           "type": "boolean",
           "x-go-name": "DismissStaleApprovals"
@@ -25959,6 +26001,14 @@
         "enable_bypass_allowlist": {
           "type": "boolean",
           "x-go-name": "EnableBypassAllowlist"
+        },
+        "enable_deletion": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletion"
+        },
+        "enable_deletion_allowlist": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletionAllowlist"
         },
         "enable_force_push": {
           "type": "boolean",
@@ -26831,6 +26881,24 @@
           },
           "x-go-name": "BypassAllowlistUsernames"
         },
+        "deletion_allowlist_deploy_keys": {
+          "type": "boolean",
+          "x-go-name": "DeletionAllowlistDeployKeys"
+        },
+        "deletion_allowlist_teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistTeams"
+        },
+        "deletion_allowlist_usernames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistUsernames"
+        },
         "dismiss_stale_approvals": {
           "type": "boolean",
           "x-go-name": "DismissStaleApprovals"
@@ -26842,6 +26910,14 @@
         "enable_bypass_allowlist": {
           "type": "boolean",
           "x-go-name": "EnableBypassAllowlist"
+        },
+        "enable_deletion": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletion"
+        },
+        "enable_deletion_allowlist": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletionAllowlist"
         },
         "enable_force_push": {
           "type": "boolean",
@@ -28412,6 +28488,24 @@
           },
           "x-go-name": "BypassAllowlistUsernames"
         },
+        "deletion_allowlist_deploy_keys": {
+          "type": "boolean",
+          "x-go-name": "DeletionAllowlistDeployKeys"
+        },
+        "deletion_allowlist_teams": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistTeams"
+        },
+        "deletion_allowlist_usernames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "x-go-name": "DeletionAllowlistUsernames"
+        },
         "dismiss_stale_approvals": {
           "type": "boolean",
           "x-go-name": "DismissStaleApprovals"
@@ -28423,6 +28517,14 @@
         "enable_bypass_allowlist": {
           "type": "boolean",
           "x-go-name": "EnableBypassAllowlist"
+        },
+        "enable_deletion": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletion"
+        },
+        "enable_deletion_allowlist": {
+          "type": "boolean",
+          "x-go-name": "EnableDeletionAllowlist"
         },
         "enable_force_push": {
           "type": "boolean",

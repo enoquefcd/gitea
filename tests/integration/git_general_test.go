@@ -21,9 +21,11 @@ import (
 	"time"
 
 	auth_model "gitea.dev/models/auth"
+	git_model "gitea.dev/models/git"
 	issues_model "gitea.dev/models/issues"
 	"gitea.dev/models/perm"
 	repo_model "gitea.dev/models/repo"
+	"gitea.dev/models/unit"
 	"gitea.dev/models/unittest"
 	user_model "gitea.dev/models/user"
 	"gitea.dev/modules/commitstatus"
@@ -32,6 +34,7 @@ import (
 	"gitea.dev/modules/lfs"
 	"gitea.dev/modules/setting"
 	api "gitea.dev/modules/structs"
+	"gitea.dev/modules/test"
 	"gitea.dev/tests"
 
 	"github.com/kballard/go-shellquote"
@@ -485,6 +488,45 @@ func doBranchProtectPRMerge(baseCtx *APITestContext, dstPath string) func(t *tes
 		t.Run("MergeProtectedToToforce", doGitMerge(dstPath, "protected"))
 		t.Run("PushToProtectedBranch", doGitPushTestRepository(dstPath, "origin", "toforce:protected"))
 		t.Run("CheckoutMasterAgain", doGitCheckoutBranch(dstPath, "master"))
+
+		t.Run("CreateBranchForProtectedDeletion", doGitCreateBranch(dstPath, "protected-delete"))
+		t.Run("PushBranchForProtectedDeletion", doGitPushTestRepository(dstPath, "origin", "protected-delete"))
+		t.Run("ProtectBranchWithoutDeletion", doProtectBranch(ctx, "protected-delete", baseCtx.Username, "", "", ""))
+		t.Run("DeleteProtectedBranchDenied", doGitPushTestRepositoryFail(dstPath, "origin", "--delete", "protected-delete"))
+		t.Run("ProtectBranchWithDeletionButWithoutPush", doProtectBranchExt(ctx, "protected-delete", doProtectBranchOptions{
+			UserToWhitelistDelete: baseCtx.Username,
+		}))
+		t.Run("DeletionWithoutPushIsNotPersisted", func(t *testing.T) {
+			repo, err := repo_model.GetRepositoryByOwnerAndName(t.Context(), baseCtx.Username, baseCtx.Reponame)
+			require.NoError(t, err)
+			rule, err := git_model.GetProtectedBranchRuleByName(t.Context(), repo.ID, "protected-delete")
+			require.NoError(t, err)
+			require.NotNil(t, rule)
+			assert.False(t, rule.CanPush)
+			assert.False(t, rule.CanDelete)
+			assert.False(t, rule.EnableDeletionAllowlist)
+			assert.False(t, rule.DeletionAllowlistDeployKeys)
+			assert.Empty(t, rule.DeletionAllowlistUserIDs)
+			assert.Empty(t, rule.DeletionAllowlistTeamIDs)
+		})
+		t.Run("DeleteProtectedBranchWithoutPushDenied", doGitPushTestRepositoryFail(dstPath, "origin", "--delete", "protected-delete"))
+		t.Run("ProtectBranchWithDeletionAllowlist", doProtectBranchExt(ctx, "protected-delete", doProtectBranchOptions{
+			UserToWhitelistPush:   baseCtx.Username,
+			UserToWhitelistDelete: baseCtx.Username,
+		}))
+		t.Run("DeletePullRequestTargetBranchDenied", func(t *testing.T) {
+			repo, err := repo_model.GetRepositoryByOwnerAndName(t.Context(), baseCtx.Username, baseCtx.Reponame)
+			require.NoError(t, err)
+			setPullRequestTargetBranch := func(target string) {
+				prUnit := unittest.AssertExistsAndLoadBean(t, &repo_model.RepoUnit{RepoID: repo.ID, Type: unit.TypePullRequests})
+				prUnit.PullRequestsConfig().DefaultTargetBranch = target
+				require.NoError(t, repo_model.UpdateRepoUnitConfig(t.Context(), prUnit))
+			}
+			setPullRequestTargetBranch("protected-delete")
+			defer setPullRequestTargetBranch("")
+			doGitPushTestRepositoryFail(dstPath, "origin", "--delete", "protected-delete")(t)
+		})
+		t.Run("DeleteProtectedBranchAllowed", doGitPushTestRepository(dstPath, "origin", "--delete", "protected-delete"))
 	}
 }
 
@@ -498,7 +540,7 @@ func doProtectBranch(ctx APITestContext, branch, userToWhitelistPush, userToWhit
 }
 
 type doProtectBranchOptions struct {
-	UserToWhitelistPush, UserToWhitelistForcePush, UnprotectedFilePatterns, ProtectedFilePatterns string
+	UserToWhitelistPush, UserToWhitelistForcePush, UserToWhitelistDelete, UnprotectedFilePatterns, ProtectedFilePatterns string
 
 	StatusCheckPatterns []string
 }
@@ -528,6 +570,13 @@ func doProtectBranchExt(ctx APITestContext, ruleName string, opts doProtectBranc
 			formData["enable_force_push_allowlist"] = "on"
 		}
 
+		if opts.UserToWhitelistDelete != "" {
+			user, err := user_model.GetUserByName(t.Context(), opts.UserToWhitelistDelete)
+			assert.NoError(t, err)
+			formData["deletion_allowlist_users"] = strconv.FormatInt(user.ID, 10)
+			formData["enable_deletion"] = "whitelist"
+		}
+
 		if len(opts.StatusCheckPatterns) > 0 {
 			formData["enable_status_check"] = "on"
 			formData["status_check_contexts"] = strings.Join(opts.StatusCheckPatterns, "\n")
@@ -543,15 +592,15 @@ func doProtectBranchExt(ctx APITestContext, ruleName string, opts doProtectBranc
 	}
 }
 
-func doMergeFork(ctx, baseCtx APITestContext, baseBranch, headBranch string) func(t *testing.T) {
+func doMergeFork(ctx, baseCtx APITestContext, baseBranch, headOwnerBranch string) func(t *testing.T) {
 	return func(t *testing.T) {
 		defer tests.PrintCurrentTest(t)()
 		var pr api.PullRequest
 		var err error
 
-		// Create a test pullrequest
+		// Create a test pull request
 		t.Run("CreatePullRequest", func(t *testing.T) {
-			pr, err = doAPICreatePullRequest(ctx, baseCtx.Username, baseCtx.Reponame, baseBranch, headBranch)(t)
+			pr, err = doAPICreatePullRequest(ctx, baseCtx.Username, baseCtx.Reponame, baseBranch, headOwnerBranch)(t)
 			assert.NoError(t, err)
 		})
 
@@ -578,10 +627,14 @@ func doMergeFork(ctx, baseCtx APITestContext, baseBranch, headBranch string) fun
 		t.Run("EnsurDiffNoChange", doEnsureDiffNoChange(baseCtx, pr, diffContent))
 
 		// Then: Delete the head branch & make sure that doesn't break the PR page or change its diff
-		t.Run("DeleteHeadBranch", doBranchDelete(baseCtx, baseCtx.Username, baseCtx.Reponame, headBranch))
-		t.Run("EnsureCanSeePull", doEnsureCanSeePull(baseCtx, pr))
-		t.Run("EnsureDiffNoChange", doEnsureDiffNoChange(baseCtx, pr, diffContent))
-
+		// FIXME: this test (from #10936) is not right, the "master" branch can't be deleted
+		_ = doBranchDelete
+		/*
+			_, headBranch, _ := strings.Cut(headOwnerBranch, ":")
+			t.Run("DeleteHeadBranch", doBranchDelete(baseCtx, baseCtx.Username, baseCtx.Reponame, headBranch))
+			t.Run("EnsureCanSeePull", doEnsureCanSeePull(baseCtx, pr))
+			t.Run("EnsureDiffNoChange", doEnsureDiffNoChange(baseCtx, pr, diffContent))
+		*/
 		// Delete the head repository & make sure that doesn't break the PR page or change its diff
 		t.Run("DeleteHeadRepository", doAPIDeleteRepository(ctx))
 		t.Run("EnsureCanSeePull", doEnsureCanSeePull(baseCtx, pr))
@@ -621,11 +674,14 @@ func doCreatePRAndSetManuallyMerged(ctx, baseCtx APITestContext, dstPath, baseBr
 func doEnsureCanSeePull(ctx APITestContext, pr api.PullRequest) func(t *testing.T) {
 	return func(t *testing.T) {
 		req := NewRequest(t, "GET", fmt.Sprintf("/%s/%s/pulls/%d", url.PathEscape(ctx.Username), url.PathEscape(ctx.Reponame), pr.Index))
-		ctx.Session.MakeRequest(t, req, http.StatusOK)
+		resp := ctx.Session.MakeRequest(t, req, http.StatusOK)
+		assert.True(t, test.IsNormalPageCompleted(resp.Body.String()))
 		req = NewRequest(t, "GET", fmt.Sprintf("/%s/%s/pulls/%d/files", url.PathEscape(ctx.Username), url.PathEscape(ctx.Reponame), pr.Index))
-		ctx.Session.MakeRequest(t, req, http.StatusOK)
+		resp = ctx.Session.MakeRequest(t, req, http.StatusOK)
+		assert.True(t, test.IsNormalPageCompleted(resp.Body.String()))
 		req = NewRequest(t, "GET", fmt.Sprintf("/%s/%s/pulls/%d/commits", url.PathEscape(ctx.Username), url.PathEscape(ctx.Reponame), pr.Index))
-		ctx.Session.MakeRequest(t, req, http.StatusOK)
+		resp = ctx.Session.MakeRequest(t, req, http.StatusOK)
+		assert.True(t, test.IsNormalPageCompleted(resp.Body.String()))
 	}
 }
 
